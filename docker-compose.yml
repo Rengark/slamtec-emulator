@@ -1,0 +1,18 @@
+# Specify the Docker Compose file format version
+version: '3.8'
+
+# Define the services (containers) for your application
+services:
+  # The name of our service
+  emulator:
+    # Build the Docker image from the Dockerfile in the current directory (.)
+    build: .
+    # Give the container a friendly name
+    container_name: slamtec-emulator-container
+    # Map port 5000 on the host machine to port 5000 in the container
+    ports:
+      - "1448:1448"
+    # Mount the current directory into the container's /app directory
+    # This allows for live code reloading during development
+    volumes:
+      - .:/app
