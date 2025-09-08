@@ -4,6 +4,7 @@ This project is a Python-based emulator for the Slamtec Robot RESTful API, built
 
 ## Setup
 
+### Option 1 (run directly)
 1.  **Create a virtual environment (recommended):**
     ```bash
     python -m venv venv
@@ -15,6 +16,9 @@ This project is a Python-based emulator for the Slamtec Robot RESTful API, built
     pip install -r requirements.txt
     ```
 
+### Option 2 (preferred, Docker)
+1. In project folder: `sudo docker-compose build`
+
 ## Running the Emulator
 
 1.  **Start the Flask server:**
@@ -23,6 +27,10 @@ This project is a Python-based emulator for the Slamtec Robot RESTful API, built
     ```
 
 2.  The server will start, typically on `http://127.0.0.1:1448`. You will see output in the console indicating that the server is running and which endpoints are available.
+
+### If using Docker
+1. `sudo docker-compose up`
+
 
 ## How It Works
 
