@@ -3,6 +3,8 @@
 import uuid
 import time
 import random
+from models.Pose import Pose3D
+from models.Cargo import Cargo
 
 
 class RobotState:
@@ -28,7 +30,7 @@ class RobotState:
             "manufacturerId": 255,
             "manufacturerName": "Slamtec (Emulated)",
             "modelId": 43792,
-            "modelName": "Apollo (Emulated)",
+            "modelName": "H2 (Emulated)",
             "deviceID": self.device_id,
             "hardwareVersion": "1.0.0",
             "softwareVersion": "1.1.0-emulated",
@@ -42,19 +44,12 @@ class RobotState:
         }
 
         self.system_params = {
-            "base.max_moving_speed": 1.0,  # m/s
+            "base.max_moving_speed": 1.2,  # m/s
             "base.max_angular_speed": 2.5,  # rad/s
         }
 
         # --- SLAM and Motion State ---
-        self.pose = {
-            "x": 1.0,
-            "y": 2.5,
-            "z": 0.0,
-            "yaw": 1.57,
-            "pitch": 0.0,
-            "roll": 0.0,
-        }
+        self.pose = Pose3D(x=1.0, y=2.5, z=0.0, yaw=1.57, pitch=0.0, roll=0.0)
 
         self.localization_quality = 78
 
@@ -79,42 +74,46 @@ class RobotState:
         self.virtual_tracks = {}
 
         self.cargos = [
-            {
-                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-                "pos": 0,
-                "orientation": "FRONT",
-                "layer": 0,
-                "type": "TAKEOUT",
-                "errors": [],
-                "boxes": [
-                    {
-                        "id": 0,
-                        "door_status": "CLOSED",
-                        "lock_status": "LOCKED",
-                        "stock_status": "EMPTY",
-                        "status": "EMPTY",
-                        "errors": [],
-                    }
-                ],
-            },
-            {
-                "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
-                "pos": 0,
-                "orientation": "FRONT",
-                "layer": 0,
-                "type": "TAKEOUT",
-                "errors": [],
-                "boxes": [
-                    {
-                        "id": 0,
-                        "door_status": "CLOSED",
-                        "lock_status": "LOCKED",
-                        "stock_status": "EMPTY",
-                        "status": "EMPTY",
-                        "errors": [],
-                    }
-                ],
-            },
+            Cargo.from_dict(
+                {
+                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "pos": 0,
+                    "orientation": "FRONT",
+                    "layer": 0,
+                    "type": "TAKEOUT",
+                    "errors": [],
+                    "boxes": [
+                        {
+                            "id": 0,
+                            "door_status": "CLOSED",
+                            "lock_status": "LOCKED",
+                            "stock_status": "EMPTY",
+                            "status": "EMPTY",
+                            "errors": [],
+                        }
+                    ],
+                }
+            ),
+            Cargo.from_dict(
+                {
+                    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+                    "pos": 0,
+                    "orientation": "FRONT",
+                    "layer": 0,
+                    "type": "TAKEOUT",
+                    "errors": [],
+                    "boxes": [
+                        {
+                            "id": 0,
+                            "door_status": "CLOSED",
+                            "lock_status": "LOCKED",
+                            "stock_status": "EMPTY",
+                            "status": "EMPTY",
+                            "errors": [],
+                        }
+                    ],
+                }
+            ),
         ]
 
     def get_new_action_id(self):
@@ -142,6 +141,14 @@ class RobotState:
             del self.pois[poi_id]
             return True
         return False
+
+    def handle_door_operation(self, operation: str, cargo_id: str, box_id: int = 0):
+        for cargo in self.cargos:
+            if cargo.id == cargo_id:
+                for box in cargo.boxes:
+                    if box.id == box_id:
+                        cargo.operation(operation)
+                        return
 
 
 # Create a single instance of the robot's state to be shared across the app

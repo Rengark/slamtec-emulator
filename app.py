@@ -4,6 +4,7 @@ import json
 import re
 from flask import Flask, jsonify, request, Response
 from mock_data import robot_state
+from models.Cargo import DoorStatus
 
 # --- Utility Functions ---
 
@@ -84,6 +85,44 @@ def delete_poi(poi_id):
         return jsonify({"error": "POI not found"}), 404
 
 
+@app.route(
+    "/api/delivery/v1/cargos/<string:cargo_id>/boxes/<int:box_id>/<string:operation>",
+    methods=["PUT"],
+)
+def operate_box(cargo_id, box_id, operation):
+    """
+    Triggers a box to open or close, interrupting any prior command.
+    """
+    target_status = None
+    if operation.lower() == ":open":
+        target_status = DoorStatus.OPEN
+    elif operation.lower() == ":close":
+        target_status = DoorStatus.CLOSED
+    else:
+        return jsonify({"error": "Invalid operation. Use 'open' or 'close'."}), 400
+
+    # (Find the box_to_operate as before...)
+    box_to_operate = None
+
+    for cargo in robot_state.cargos:
+        if cargo.id == cargo_id:
+            box_to_operate = cargo
+            cargo.operation(target_status, box_id)
+            break
+
+    if not box_to_operate:
+        return jsonify({"error": f"Box with ID {box_id} not found."}), 404
+
+    # The call is now much simpler and safer
+    # box_to_operate.operation(target_status, box_id)
+
+    return jsonify(
+        {
+            "message": f"Command '{operation}' sent to Box {box_id}. Current status: {box_to_operate.boxes[box_id].door_status.value}"
+        }
+    )
+
+
 def clear_pois():
     """Handler for DELETE /api/core/artifact/v1/pois"""
     robot_state.pois.clear()
@@ -105,7 +144,10 @@ def get_localization_quality():
 
 def get_cargos():
     """Handler for GET /api/delivery/v1/cargos"""
-    return jsonify(robot_state.cargos)
+    ret = []
+    for cargo in robot_state.cargos:
+        ret.append(cargo.to_dict())
+    return jsonify(ret)
 
 
 # A generic handler for endpoints that are not yet specifically implemented
