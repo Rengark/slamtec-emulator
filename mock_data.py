@@ -12,7 +12,7 @@ class RobotState:
     """
 
     def __init__(self):
-        self.device_id = str(uuid.uuid4()).upper().replace("-", "")
+        self.device_id = "DE55F0684397409280D8625264CD921B"  # str(uuid.uuid4()).upper().replace("-", "")
 
         # --- System State ---
         self.power_status = {
