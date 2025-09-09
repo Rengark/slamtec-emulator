@@ -5,7 +5,6 @@ import re
 from flask import Flask, jsonify, request, Response
 from mock_data import robot_state
 from models.Cargo import DoorStatus
-
 # --- Utility Functions ---
 
 
@@ -123,6 +122,29 @@ def operate_box(cargo_id, box_id, operation):
     )
 
 
+def create_action(payload):
+    """Handler for POST /api/core/motion/v1/actions"""
+    data = request.get_json()
+    if not data or "action_name" not in data:
+        return jsonify({"error": "action_name is required"}), 400
+
+    action_name = data.get("action_name")
+    options = data.get("options", {})
+
+    # Try to start the new action
+    action_info = robot_state.start_new_action(action_name, options)
+
+    if not action_info:
+        return jsonify(
+            {
+                "error": "Failed to create action",
+                "reason": "Another action is already in progress.",
+            }
+        ), 400  # 400 Bad Request is appropriate here
+
+    return jsonify(action_info), 200  # 200 OK or 201 Created
+
+
 def clear_pois():
     """Handler for DELETE /api/core/artifact/v1/pois"""
     robot_state.pois.clear()
@@ -170,6 +192,20 @@ def generic_handler(*args, **kwargs):
     return jsonify({"message": f"Endpoint {request.path} not fully implemented."})
 
 
+def get_current_action():
+    if robot_state.current_action.id != -1:
+        return jsonify(robot_state.current_action)
+    else:
+        return jsonify("Action Not Found"), 404
+
+
+def abort_current_action():
+    """Handler for DELETE /api/core/motion/v1/actions/:current"""
+    robot_state.abort_current_action()
+    # always succeeds lol
+    return jsonify({"status": "success", "message": "Action aborted."}), 200
+
+
 # --- Dynamic Route Creation ---
 
 # Mapping from operationId to our specific handler functions
@@ -188,6 +224,9 @@ handler_map = {
     "clearPois": clear_pois,
     "getCompositeMap": get_binary_map,
     "getCargos": get_cargos,
+    "getCurrentAction": get_current_action,
+    "createAction": create_action,
+    "abortCurrentAction": abort_current_action,
 }
 
 

@@ -1,4 +1,5 @@
 from enum import Enum, IntEnum, StrEnum
+from dataclasses import dataclass, field
 
 
 class SlamtecActionName(StrEnum):  # Only used when SlamtecApiName is CALL_ACTION
@@ -29,27 +30,28 @@ class SlamtecActionName(StrEnum):  # Only used when SlamtecApiName is CALL_ACTIO
 
 
 class SlamtecActionStatus(IntEnum):
-    FAILED = -2
-    ABORTED = -1
-    DONE = 0
-    ONGOING = 1
+    NEWBORN = 0
+    WORKING = 1
+    PAUSED = 2
+    DONE = 4
 
 
-class SlamtecApiName(StrEnum):
-    LOAD_FLOOR = "/api/multi-floor/map/v1/floors/:current"
-    CALL_ACTION = "/api/core/motion/v1/actions"
-    ABORT_ACTION = "/api/core/motion/v1/actions/:current"
-    CHECK_BMS = "/api/core/system/v1/power/status"
-    CHECK_POSE = "/api/core/slam/v1/localization/pose"
+class SlamtecActionResult(IntEnum):
+    SUCCESS = 0
+    FAILED = -1
+    ABORTED = -2
 
 
-class SlamtecChangeFloorStatus(IntEnum):
-    START = 0
-    COMPLETE = 1
-    ERROR = -1
+@dataclass
+class ActionState:
+    status: SlamtecActionStatus = SlamtecActionStatus.NEWBORN
+    result: SlamtecActionResult = SlamtecActionResult.SUCCESS
+    reason: str = str()
 
 
-class SlamtecChangePoseStatus(IntEnum):
-    IDLE = 0
-    START = 1
-    GOING = 2
+@dataclass
+class ActionInfo:
+    action_id: int = -1
+    action_name: SlamtecActionName = SlamtecActionName.NONE
+    stage: str = str()
+    state: ActionState = field(default_factory=ActionState)

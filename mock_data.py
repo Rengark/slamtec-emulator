@@ -2,9 +2,12 @@
 
 import uuid
 import time
+import threading
+import math
 import random
 from models.Pose import Pose3D
 from models.Cargo import Cargo
+from models.Action import ActionInfo, ActionState
 
 
 class RobotState:
@@ -53,9 +56,9 @@ class RobotState:
 
         self.localization_quality = 78
 
-        self.current_action = None
+        self.current_action = ActionInfo()
         self.action_history = {}
-        self.action_id_counter = 0
+        self.action_id_counter = -1
 
         # --- Artifacts State ---
         self.pois = {
@@ -115,10 +118,138 @@ class RobotState:
                 }
             ),
         ]
+        self._action_lock = threading.Lock()  # To prevent race conditions with actions
+        self.action_cancel_event = None
 
     def get_new_action_id(self):
         self.action_id_counter += 1
         return self.action_id_counter
+
+    def start_new_action(self, action_name, options):
+        """Creates and starts a new action, running the simulation in a background thread."""
+        with self._action_lock:
+            if self.current_action:
+                # A real robot might queue actions, but for this emulator,
+                # we'll only allow one at a time.
+                return None  # Indicate failure to create action
+
+            action_id = self.get_new_action_id()
+
+            # This is the ActionInfo object that gets returned immediately
+            self.current_action = {
+                "action_id": action_id,
+                "action_name": action_name,
+                "stage": "New",
+                "state": {
+                    "status": 0,  # 0: NewBorn, 1: Working, 4: Done
+                    "result": 0,  # 0: Success
+                    "reason": "",
+                },
+            }
+            self.action_cancel_event = threading.Event()
+            # Start the appropriate simulation in the background
+            # Here we only simulate 'MoveToAction' as an example
+            if action_name == "slamtec.agent.actions.MoveToAction":
+                thread = threading.Thread(
+                    target=self._simulate_move_to_action,
+                    args=(action_id, options, self.action_cancel_event),
+                )
+                thread.start()
+            else:
+                # For other actions, we can just mark them as instantly complete
+                print(
+                    f"Warning: Action '{action_name}' is not simulated. Completing immediately."
+                )
+                self.current_action["state"]["status"] = 4  # Done
+                self.action_history[action_id] = self.current_action
+                self.current_action = None
+
+            return self.action_history.get(action_id) or self.current_action
+
+    def _simulate_move_to_action(self, action_id, options, cancel_event):
+        """The background worker function that simulates robot movement."""
+        print(f"[Action {action_id}] Started: Moving to {options.get('target')}")
+
+        # --- Update action state to 'Working' ---
+        with self._action_lock:
+            self.current_action["stage"] = "MOVING_TO_TARGET"
+            self.current_action["state"]["status"] = 1  # Working
+
+        target = options.get("target", {})
+        target_x = target.get("x", self.pose["x"])
+        target_y = target.get("y", self.pose["y"])
+
+        # --- Simple simulation logic ---
+        start_x, start_y = self.pose["x"], self.pose["y"]
+        distance = math.sqrt((target_x - start_x) ** 2 + (target_y - start_y) ** 2)
+
+        speed = 0.5  # meters per second
+        duration = distance / speed
+        steps = int(duration * 10)  # 10 steps per second
+
+        if steps == 0:
+            steps = 1
+
+        for i in range(steps):
+            # check for cancel action signal
+            if cancel_event.is_set():
+                print(
+                    f"[Action {action_id}] Received abort signal. Stopping simulation."
+                )
+                return  # Exit the thread
+            time.sleep(0.1)
+            progress = (i + 1) / steps
+            # Linearly interpolate the position
+            with self._action_lock:
+                self.pose["x"] = start_x + (target_x - start_x) * progress
+                self.pose["y"] = start_y + (target_y - start_y) * progress
+                # print(f"[Action {action_id}] Progress: {int(progress*100)}%, Pose: ({self.pose['x']:.2f}, {self.pose['y']:.2f})")
+
+        # --- Finalize the action ---
+        with self._action_lock:
+            if cancel_event.is_set():
+                return
+            self.pose["x"] = target_x
+            self.pose["y"] = target_y
+            self.current_action["stage"] = "Arrived"
+            self.current_action["state"]["status"] = 4  # Done
+            self.current_action["state"]["result"] = 0  # Success
+
+            # Move from current to history
+            self.action_history[action_id] = self.current_action
+            self.current_action = None
+            print(
+                f"[Action {action_id}] Finished. Final pose: ({self.pose['x']:.2f}, {self.pose['y']:.2f})"
+            )
+
+    def abort_current_action(self):
+        """Aborts the currently running action."""
+        with self._action_lock:
+            if not self.current_action:
+                return False  # No action to abort
+
+            action_id = self.current_action["action_id"]
+            print(f"[Action {action_id}] Aborting action...")
+
+            # 1. Signal the background thread to stop
+            if self.action_cancel_event:
+                self.action_cancel_event.set()
+
+            # 2. Update the state as requested
+            self.current_action["state"]["status"] = 4  # Done
+            self.current_action["state"]["result"] = -2  # Aborted
+            self.current_action["state"]["reason"] = "Aborted by user"
+            self.current_action["stage"] = "Aborted"
+
+            # 3. Move it to the history
+            self.action_history[action_id] = self.current_action
+
+            # 4. Clear the current action
+            self.current_action = None
+            self.action_cancel_event = None
+
+            print(f"[Action {action_id}] Moved to history with 'Aborted' status.")
+            return True
 
     def update_pose(self, new_pose):
         self.pose.update(new_pose)
