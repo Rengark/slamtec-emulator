@@ -76,9 +76,9 @@ class Box:
         """Converts the Box instance to a dictionary."""
         return {
             "id": self.id,
-            "doorStatus": self.door_status.value,
-            "lockStatus": self.lock_status.value,
-            "stockStatus": self.stock_status.value,
+            "door_status": self.door_status.value,
+            "lock_status": self.lock_status.value,
+            "stock_status": self.stock_status.value,
             "status": self.status.value,
             "errors": self.errors,
         }
