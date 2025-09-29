@@ -206,6 +206,10 @@ def abort_current_action():
     return jsonify({"status": "success", "message": "Action aborted."}), 200
 
 
+def get_current_floor():
+    return jsonify(robot_state.curr_floor), 200
+
+
 # --- Dynamic Route Creation ---
 
 # Mapping from operationId to our specific handler functions
@@ -227,6 +231,7 @@ handler_map = {
     "getCurrentAction": get_current_action,
     "createAction": create_action,
     "abortCurrentAction": abort_current_action,
+    "getCurrentFloor": get_current_floor,
 }
 
 
