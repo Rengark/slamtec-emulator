@@ -4,6 +4,8 @@ import json
 import re
 from flask import Flask, jsonify, request, Response
 from mock_data import robot_state
+
+# from models.Action import ActionInfo
 from models.Cargo import DoorStatus
 # --- Utility Functions ---
 
@@ -85,17 +87,17 @@ def delete_poi(poi_id):
 
 
 @app.route(
-    "/api/delivery/v1/cargos/<string:cargo_id>/boxes/<int:box_id>/<string:operation>",
+    "/api/delivery/v1/cargos/<string:cargo_id>/boxes/<int:box_id>/<string:op>",
     methods=["PUT"],
 )
-def operate_box(cargo_id, box_id, operation):
+def operate_box(cargo_id, box_id, op):
     """
     Triggers a box to open or close, interrupting any prior command.
     """
     target_status = None
-    if operation.lower() == ":open":
+    if op.lower() == ":open":
         target_status = DoorStatus.OPEN
-    elif operation.lower() == ":close":
+    elif op.lower() == ":close":
         target_status = DoorStatus.CLOSED
     else:
         return jsonify({"error": "Invalid operation. Use 'open' or 'close'."}), 400
@@ -117,12 +119,12 @@ def operate_box(cargo_id, box_id, operation):
 
     return jsonify(
         {
-            "message": f"Command '{operation}' sent to Box {box_id}. Current status: {box_to_operate.boxes[box_id].door_status.value}"
+            "message": f"Command '{op}' sent to Box {box_id}. Current status: {box_to_operate.boxes[box_id].door_status.value}"
         }
     )
 
 
-def create_action(payload):
+def create_action():
     """Handler for POST /api/core/motion/v1/actions"""
     data = request.get_json()
     if not data or "action_name" not in data:
@@ -150,6 +152,24 @@ def clear_pois():
     robot_state.pois.clear()
     print("All POIs cleared.")
     return jsonify(True)
+
+
+@app.route(
+    "/api/core/motion/v1/actions/<int:action_id>",
+    methods=["GET"],
+)
+def getActionResult(action_id):
+    """Handler for query /api/core/motion/v1/actions/{}"""
+    if action_id == -1:
+        return jsonify({"error": f"Action ID {action_id} not found"}), 404
+    if robot_state.current_action is not None:
+        if robot_state.current_action.action_id == action_id:
+            return jsonify((robot_state.current_action)), 200
+
+    value = robot_state.action_history.get(action_id, None)
+    if value is not None:
+        return jsonify(value), 200
+    return jsonify({"error": f"Action ID {action_id} not found"}), 404
 
 
 def get_binary_map():
@@ -193,7 +213,10 @@ def generic_handler(*args, **kwargs):
 
 
 def get_current_action():
-    if robot_state.current_action.id != -1:
+    if (
+        robot_state.current_action is not None
+        and robot_state.current_action.action_id != -1
+    ):
         return jsonify(robot_state.current_action)
     else:
         return jsonify("Action Not Found"), 404
@@ -232,6 +255,7 @@ handler_map = {
     "createAction": create_action,
     "abortCurrentAction": abort_current_action,
     "getCurrentFloor": get_current_floor,
+    #    "operateBox": operate_box,
 }
 
 

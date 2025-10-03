@@ -54,9 +54,9 @@ class Box:
     """Represents a single box within a cargo bay."""
 
     id: int = 0
-    door_status: DoorStatus = DoorStatus.CLOSED.value
-    lock_status: LockStatus = LockStatus.LOCKED.value
-    stock_status: StockStatus = StockStatus.EMPTY.value
+    door_status: DoorStatus = DoorStatus.CLOSED
+    lock_status: LockStatus = LockStatus.LOCKED
+    stock_status: StockStatus = StockStatus.EMPTY
     status: BoxStatus = BoxStatus.EMPTY
     errors: List[str] = field(default_factory=list)
 

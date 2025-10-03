@@ -6,8 +6,13 @@ import threading
 import math
 import random
 from models.Pose import Pose3D
-from models.Cargo import Cargo
-from models.Action import ActionInfo, ActionState
+from models.Cargo import Cargo, DoorStatus
+from models.Action import (
+    ActionInfo,
+    ActionState,
+    SlamtecActionResult,
+    SlamtecActionStatus,
+)
 
 
 class RobotState:
@@ -56,7 +61,7 @@ class RobotState:
 
         self.localization_quality = 78
 
-        self.current_action = ActionInfo()
+        self.current_action = None
         self.action_history = {}
         self.action_id_counter = -1
 
@@ -133,24 +138,29 @@ class RobotState:
     def start_new_action(self, action_name, options):
         """Creates and starts a new action, running the simulation in a background thread."""
         with self._action_lock:
+            print(f"Running new action: {action_name}")
             if self.current_action:
                 # A real robot might queue actions, but for this emulator,
                 # we'll only allow one at a time.
+                print(
+                    f"Failed to run new action: {action_name}, already running an action"
+                )
                 return None  # Indicate failure to create action
 
             action_id = self.get_new_action_id()
 
             # This is the ActionInfo object that gets returned immediately
-            self.current_action = {
-                "action_id": action_id,
-                "action_name": action_name,
-                "stage": "New",
-                "state": {
-                    "status": 0,  # 0: NewBorn, 1: Working, 4: Done
-                    "result": 0,  # 0: Success
-                    "reason": "",
-                },
-            }
+            self.current_action = ActionInfo(
+                action_id=action_id,
+                action_name=action_name,
+                stage="New",
+                state=ActionState(
+                    status=SlamtecActionStatus.NEWBORN,  # 0: NewBorn, 1: Working, 4: Done
+                    result=SlamtecActionResult.SUCCESS,  # 0: Success
+                    reason="",
+                ),
+            )
+
             self.action_cancel_event = threading.Event()
             # Start the appropriate simulation in the background
             # Here we only simulate 'MoveToAction' as an example
@@ -165,8 +175,8 @@ class RobotState:
                 print(
                     f"Warning: Action '{action_name}' is not simulated. Completing immediately."
                 )
-                self.current_action["state"]["status"] = 4  # Done
-                self.action_history[action_id] = self.current_action
+                self.current_action.state.status = SlamtecActionStatus.DONE  # Done
+                self.action_history.update({action_id: self.current_action})
                 self.current_action = None
 
             return self.action_history.get(action_id) or self.current_action
@@ -174,18 +184,19 @@ class RobotState:
     def _simulate_move_to_action(self, action_id, options, cancel_event):
         """The background worker function that simulates robot movement."""
         print(f"[Action {action_id}] Started: Moving to {options.get('target')}")
-
+        if self.current_action is None:
+            return
         # --- Update action state to 'Working' ---
         with self._action_lock:
-            self.current_action["stage"] = "MOVING_TO_TARGET"
-            self.current_action["state"]["status"] = 1  # Working
+            self.current_action.stage = "MOVING_TO_TARGET"
+            self.current_action.state.status = SlamtecActionStatus.WORKING  # Working
 
         target = options.get("target", {})
-        target_x = target.get("x", self.pose["x"])
-        target_y = target.get("y", self.pose["y"])
+        target_x = target.get("x", self.pose.x)
+        target_y = target.get("y", self.pose.y)
 
         # --- Simple simulation logic ---
-        start_x, start_y = self.pose["x"], self.pose["y"]
+        start_x, start_y = self.pose.x, self.pose.y
         distance = math.sqrt((target_x - start_x) ** 2 + (target_y - start_y) ** 2)
 
         speed = 0.5  # meters per second
@@ -206,25 +217,25 @@ class RobotState:
             progress = (i + 1) / steps
             # Linearly interpolate the position
             with self._action_lock:
-                self.pose["x"] = start_x + (target_x - start_x) * progress
-                self.pose["y"] = start_y + (target_y - start_y) * progress
+                self.pose.x = start_x + (target_x - start_x) * progress
+                self.pose.y = start_y + (target_y - start_y) * progress
                 # print(f"[Action {action_id}] Progress: {int(progress*100)}%, Pose: ({self.pose['x']:.2f}, {self.pose['y']:.2f})")
 
         # --- Finalize the action ---
         with self._action_lock:
             if cancel_event.is_set():
                 return
-            self.pose["x"] = target_x
-            self.pose["y"] = target_y
-            self.current_action["stage"] = "Arrived"
-            self.current_action["state"]["status"] = 4  # Done
-            self.current_action["state"]["result"] = 0  # Success
+            self.pose.x = target_x
+            self.pose.y = target_y
+            self.current_action.stage = "Arrived"
+            self.current_action.state.status = SlamtecActionStatus.DONE  # Done
+            self.current_action.state.result = SlamtecActionResult.SUCCESS  # Success
 
             # Move from current to history
-            self.action_history[action_id] = self.current_action
+            self.action_history.update({action_id: self.current_action})
             self.current_action = None
             print(
-                f"[Action {action_id}] Finished. Final pose: ({self.pose['x']:.2f}, {self.pose['y']:.2f})"
+                f"[Action {action_id}] Finished. Final pose: ({self.pose.x:.2f}, {self.pose.y:.2f})"
             )
 
     def abort_current_action(self):
@@ -233,7 +244,7 @@ class RobotState:
             if not self.current_action:
                 return False  # No action to abort
 
-            action_id = self.current_action["action_id"]
+            action_id = self.current_action.action_id
             print(f"[Action {action_id}] Aborting action...")
 
             # 1. Signal the background thread to stop
@@ -241,13 +252,13 @@ class RobotState:
                 self.action_cancel_event.set()
 
             # 2. Update the state as requested
-            self.current_action["state"]["status"] = 4  # Done
-            self.current_action["state"]["result"] = -2  # Aborted
-            self.current_action["state"]["reason"] = "Aborted by user"
-            self.current_action["stage"] = "Aborted"
+            self.current_action.state.status = SlamtecActionStatus.DONE  # Done
+            self.current_action.state.result = SlamtecActionResult.ABORTED  # Aborted
+            self.current_action.state.reason = "Aborted by user"
+            self.current_action.stage = "Aborted"
 
             # 3. Move it to the history
-            self.action_history[action_id] = self.current_action
+            self.action_history.update({action_id: self.current_action})
 
             # 4. Clear the current action
             self.current_action = None
@@ -257,7 +268,7 @@ class RobotState:
             return True
 
     def update_pose(self, new_pose):
-        self.pose.update(new_pose)
+        self.pose = new_pose
 
     def add_poi(self, poi_data):
         # In a real scenario, we'd validate the schema
@@ -265,9 +276,9 @@ class RobotState:
         if "pose" not in poi_data:
             # If no pose provided, use the robot's current pose
             poi_data["pose"] = {
-                "x": self.pose["x"],
-                "y": self.pose["y"],
-                "yaw": self.pose["yaw"],
+                "x": self.pose.x,
+                "y": self.pose.y,
+                "yaw": self.pose.yaw,
             }
         self.pois[poi_id] = poi_data
         return poi_data
@@ -277,14 +288,6 @@ class RobotState:
             del self.pois[poi_id]
             return True
         return False
-
-    def handle_door_operation(self, operation: str, cargo_id: str, box_id: int = 0):
-        for cargo in self.cargos:
-            if cargo.id == cargo_id:
-                for box in cargo.boxes:
-                    if box.id == box_id:
-                        cargo.operation(operation)
-                        return
 
 
 # Create a single instance of the robot's state to be shared across the app
